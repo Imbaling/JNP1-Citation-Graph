@@ -1,7 +1,12 @@
 #ifndef _CITATION_GRAPH_H
 #define _CITATION_GRAPH_H
 
-template <class Publication> CitationGraph {
+#include <exception>
+#include <vector>
+#include <utility>
+
+template <class Publication>
+class CitationGraph {
     private:
 
     public:
@@ -10,13 +15,13 @@ template <class Publication> CitationGraph {
 
     // Konstruktor przenoszący i przenoszący operator przypisania. Powinny być
     // noexcept.
-    CitationGraph(CitationGraph<P> &&other);
-    CitationGraph<P>& operator=(CitationGraph<P> &&other);
+    CitationGraph(CitationGraph<P> &&other) noexcept;
+    CitationGraph<P>& operator=(CitationGraph<P> &&other) noexcept;
 
     // Zwraca identyfikator źródła. Metoda ta powinna być noexcept wtedy i tylko
     // wtedy, gdy metoda Publication::get_id jest noexcept. Zamiast pytajnika należy
     // wpisać stosowne wyrażenie.
-    Publication::id_type get_root_id() const noexcept(?);
+    typename Publication::id_type get_root_id() const noexcept(noexcept(std::declval<Publication>().get_id()));
 
     // Zwraca listę identyfikatorów publikacji cytujących publikację o podanym
     // identyfikatorze. Zgłasza wyjątek PublicationNotFound, jeśli dana publikacja
@@ -53,6 +58,15 @@ template <class Publication> CitationGraph {
     // TriedToRemoveRoot przy próbie usunięcia pierwotnej publikacji.
     // W wypadku rozspójnienia grafu, zachowujemy tylko spójną składową zawierającą źródło.
     void remove(Publication::id_type const &id);
+};
+
+class PublicationAlreadyCreated : public std::exception {
+};
+
+class PublicationNotFound : public std::exception {
+};
+
+class TriedToRemoveRoot : public std::exception {
 };
 
 #endif // _CITATION_GRAPH_H
