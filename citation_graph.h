@@ -36,22 +36,22 @@ class CitationGraph {
 
         struct Node {
             private:
-                CitationGraph<Publication> *graph;
-                typename map_type::iterator iterator;
+                map_type *map;
+                typename map_type::iterator map_iterator;
 
                 std::shared_ptr<Publication> pointer;
                 std::set<std::shared_ptr<Node>, std::owner_less<std::shared_ptr<Node>>> children;
 				        std::vector<std::weak_ptr<Node>> parents;
 
             public:
-                Node(CitationGraph<Publication> *graph_p, const id_type &value)
-                    : graph(graph_p), pointer(std::make_shared<Publication>(value)) {
+                Node(map_type *map_p, const id_type &value)
+                    : map(map_p), pointer(std::make_shared<Publication>(value)) {
                 }
 
                 Node(const Node &) = delete;
 
-                void setIterator(typename map_type::iterator const &it) {
-                    iterator = it;
+                void setMapIterator(typename map_type::iterator const &it) {
+                    map_iterator = it;
                 }
 
                 Publication& getPublication() const noexcept {
@@ -85,18 +85,33 @@ class CitationGraph {
 
                      return parentsIds;
         				}
+
+                // TODO trzeba się upewnić, że for-each nie będzie rzucał wyjątków (iteratory)
+                void removeNode() {
+                    std::shared_ptr me{this};
+
+                    for (const auto &parent : parents) {
+                        parent.lock()->erase(me);
+                    }
+                }
+
+                ~Node() noexcept {
+                    map->erase(map_iterator);
+                }
         };
 
-    		std::shared_ptr<Node> root;
         std::unique_ptr<map_type> publications;
+    		std::shared_ptr<Node> root;
 
     public:
         // Creates the graph.
         // It also creates root with publication, which id is equal to stem_id.
         CitationGraph(id_type const &stem_id)
-            : root(std::make_shared<Node>(this, stem_id)),
-              publications(std::make_unique<map_type>()) {
-            publications->insert(typename map_type::value_type(stem_id, root));
+            : publications(std::make_unique<map_type>()),
+              root(std::make_shared<Node>(publications.get(), stem_id)) {
+            const auto it = publications->insert(typename map_type::value_type(stem_id, root));
+
+            root->setMapIterator(it.first);
         }
 
         // Move constructor.
@@ -188,19 +203,16 @@ class CitationGraph {
         // PublicationNotFound, jeśli żądana publikacja nie istnieje. Zgłasza wyjątek
         // TriedToRemoveRoot przy próbie usunięcia pierwotnej publikacji.
         // W wypadku rozspójnienia grafu, zachowujemy tylko spójną składową zawierającą źródło.
-        // TODO to się jeszcze zmieni, bo zmieniło się podejście do przechowywania rzeczy w nodzie i mapie.
         void remove(typename Publication::id_type const &id) {
-      			// auto publication = publications->find(id);
-            //
-      			// if (publication != publications->end()) {
-        		// 		if (publication->second != root) { //TODO pewnie zle porownanie
-          	// 				publications->erase(publication);
-        		// 		} else {
-          	// 				throw TriedToRemoveRoot();
-        		// 		}
-      			// } else {
-        		// 		throw PublicationNotFound();
-      			// }
+      			auto publication = publications->find(id);
+
+            if (publication == publication->end())
+                throw PublicationNotFound();
+
+            if (publication->lock()->getPublication().get_id() == id)
+                throw TriedToRemoveRoot();
+
+            publication->lock()->removeNode();
     		}
 };
 
