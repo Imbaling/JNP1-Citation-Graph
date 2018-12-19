@@ -29,20 +29,30 @@ class TriedToRemoveRoot : public std::exception {
 template <class Publication>
 class CitationGraph {
     private:
+        struct Node;
+
         using id_type = typename Publication::id_type;
+        using map_type = typename std::map<id_type, std::weak_ptr<Node>>;
 
         struct Node {
             private:
+                CitationGraph<Publication> *graph;
+                typename map_type::iterator iterator;
+
                 std::shared_ptr<Publication> pointer;
-                std::set<std::shared_ptr<Node>> children;
+                std::set<std::shared_ptr<Node>, std::owner_less<std::shared_ptr<Node>>> children;
 				        std::vector<std::weak_ptr<Node>> parents;
 
             public:
-                Node(const id_type &value)
-                    : pointer(std::make_shared<Publication>(value)) {
+                Node(CitationGraph<Publication> *graph_p, const id_type &value)
+                    : graph(graph_p), pointer(std::make_shared<Publication>(value)) {
                 }
 
                 Node(const Node &) = delete;
+
+                void setIterator(typename map_type::iterator const &it) {
+                    iterator = it;
+                }
 
                 Publication& getPublication() const noexcept {
                     return *pointer;
@@ -77,8 +87,6 @@ class CitationGraph {
         				}
         };
 
-        using map_type = typename std::map<id_type, std::weak_ptr<Node>>;
-
     		std::shared_ptr<Node> root;
         std::unique_ptr<map_type> publications;
 
@@ -86,7 +94,7 @@ class CitationGraph {
         // Creates the graph.
         // It also creates root with publication, which id is equal to stem_id.
         CitationGraph(id_type const &stem_id)
-            : root(std::make_shared<Node>(stem_id)),
+            : root(std::make_shared<Node>(this, stem_id)),
               publications(std::make_unique<map_type>()) {
             publications->insert(typename map_type::value_type(stem_id, root));
         }
