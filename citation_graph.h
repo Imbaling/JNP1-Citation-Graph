@@ -42,11 +42,13 @@ class CitationGraph {
 
                 std::shared_ptr<Publication> pointer;
                 std::set<std::shared_ptr<Node>, std::owner_less<std::shared_ptr<Node>>> children;
-				std::vector<std::weak_ptr<Node>> parents;
+								std::vector<std::weak_ptr<Node>> parents;
 
             public:
                 Node(map_type *map_p, const id_type &value)
-                    : map(map_p), pointer(std::make_shared<Publication>(value)) {
+                    : map(map_p),
+											map_iterator(map_p->end()),
+											pointer(std::make_shared<Publication>(value)) {
                 }
 
                 Node(const Node &) = delete;
@@ -59,54 +61,60 @@ class CitationGraph {
                     return *pointer;
                 }
 
-        		void addChild(std::shared_ptr<Node> const node) {
-          			children.insert(node);
-        		}
-				
-        		void addParent(std::shared_ptr<Node> const node) {
-          			parents.push_back(node);
-        		}
-				
-				void removeLastParent() noexcept { //TODO pop_back jest noexcept jesli wektor ma rozmiar wiekszy od 0, nie wiem czy to sprawdzac?
-					parents.pop_back();
-				}
+		        		void addChild(std::shared_ptr<Node> const &node) {
+		          			children.insert(node);
+		        		}
 
-        		std::vector<id_type> getChildrenIds() const {
-        			std::vector<id_type> childrenIds;
+		        		void addParent(std::weak_ptr<Node> const &node) {
+		          			parents.push_back(node);
+		        		}
+
+								void removeLastParent() noexcept {
+										if (!parents.empty())
+												parents.pop_back();
+								}
+
+		        		std::vector<id_type> getChildrenIds() const {
+			        			std::vector<id_type> childrenIds;
 
                     for (const auto &child : children) {
                         childrenIds.push_back(child->getPublication().get_id());
                     }
 
                     return childrenIds;
-        		}
+		        		}
 
-        		std::vector<id_type> getParentsIds() const {
-                	std::vector<id_type> parentsIds;
+		        		std::vector<id_type> getParentsIds() const {
+	                	std::vector<id_type> parentsIds;
 
                     for (const auto &parent : parents) {
+												if (parent.expired())
+														continue;
+
                         parentsIds.push_back(parent.lock()->getPublication().get_id());
                     }
 
                     return parentsIds;
-        		}
+		        		}
 
-                // TODO trzeba się upewnić, że for-each nie będzie rzucał wyjątków (iteratory)
-                void removeNode() {
-                    std::shared_ptr me{this};
+								void erase(const std::shared_ptr<Node> &son) noexcept {
+										children.erase(son);
+								}
 
+                void removeNode(const std::shared_ptr<Node> &me) {
                     for (const auto &parent : parents) {
-                        //	parent.lock()->erase(me);
+                        	parent.lock()->erase(me);
                     }
                 }
 
                 ~Node() noexcept {
-                    map->erase(map_iterator);
+										if (map_iterator != map->end())
+                    		map->erase(map_iterator);
                 }
         };
 
         std::unique_ptr<map_type> publications;
-    	std::shared_ptr<Node> root;
+    		std::shared_ptr<Node> root;
 
     public:
         // Creates the graph.
@@ -121,8 +129,8 @@ class CitationGraph {
 
         // Move constructor.
         CitationGraph(CitationGraph<Publication> &&other) noexcept
-            : root(std::move(other.root)),
-              publications(std::move(other.publications)) {
+            : publications(std::move(other.publications)),
+							root(std::move(other.root)) {
         }
 
         // Move assignment operator.
@@ -167,7 +175,7 @@ class CitationGraph {
         // Sprawdza, czy publikacja o podanym identyfikatorze istnieje.
         bool exists(typename Publication::id_type const &id) const {
     			  return publications->find(id) != publications->end();
-    	}
+    	  }
 
         // Zwraca referencję do obiektu reprezentującego publikację o podanym
         // identyfikatorze. Zgłasza wyjątek PublicationNotFound, jeśli żądana publikacja
@@ -181,74 +189,66 @@ class CitationGraph {
       			return publication->second.lock()->getPublication();
     		}
 
-        // Tworzy węzeł reprezentujący nową publikację o identyfikatorze id cytującą
+				// Tworzy węzeł reprezentujący nową publikację o identyfikatorze id cytującą
         // publikacje o podanym identyfikatorze parent_id lub podanych identyfikatorach
         // parent_ids. Zgłasza wyjątek PublicationAlreadyCreated, jeśli publikacja
         // o identyfikatorze id już istnieje. Zgłasza wyjątek PublicationNotFound, jeśli
         // któryś z wyspecyfikowanych poprzedników nie istnieje albo lista poprzedników jest pusta.
+				void create(typename Publication::id_type const &id, typename std::vector<typename Publication::id_type> const &parent_ids) {
+						const auto child_node = publications->find(id);
+						if (child_node != publications->end())
+							throw PublicationAlreadyCreated();
+
+						for (auto parent_id : parent_ids) {
+								const auto parent_node = publications->find(parent_id);
+								if (parent_node == publications->end())
+										throw PublicationNotFound();
+						}
+
+						const auto node = std::make_shared<Node>(publications.get(), id);
+						const auto it = publications->insert(typename map_type::value_type(id, node));
+
+						try {
+					      node->setMapIterator(it.first);
+						} catch (...) {
+								publications->erase(it.first);
+								throw;
+						}
+
+						for (auto parent_id : parent_ids) {
+								try {
+										add_citation(id, parent_id);
+								} catch(std::exception &e) {
+									  node->removeNode(node);
+										throw e;
+								}
+						}
+				}
+
         void create(typename Publication::id_type const &id, typename Publication::id_type const &parent_id) {
-			const auto child_node = publications->find(id);
-			if (child_node != publications->end())
-				throw PublicationAlreadyCreated();
-			
-			const auto parent_node = publications->find(parent_id);
-			if (parent_node == publications->end())
-				throw PublicationNotFound();
+						std::vector<typename Publication::id_type> parents_ids = {parent_id};
 
-			const auto node = std::make_shared<Node>(publications.get(), id); 
-			const auto it = publications->insert(typename map_type::value_type(id, node));
-            node->setMapIterator(it.first);
-			
-			try{
-				add_citation(id, parent_id);
-			} catch(std::exception &e) {
-				//node->removeNode(); //TODO nie wiem czemu sie nie kompiluje, ale chyba w ogole nie jest potrzebne				
-				throw e;
-			}
-		}
-        void create(typename Publication::id_type const &id, typename std::vector<typename Publication::id_type> const &parent_ids) {
-			const auto child_node = publications->find(id);
-			if (child_node != publications->end())
-				throw PublicationAlreadyCreated();
-			
-			for (auto parent_id : parent_ids) {
-				const auto parent_node = publications->find(parent_id);
-				if (parent_node == publications->end())
-					throw PublicationNotFound();
-			}
-			
-			const auto node = std::make_shared<Node>(publications.get(), id); 
-			const auto it = publications->insert(typename map_type::value_type(id, node));
-            node->setMapIterator(it.first);						
-
-			for (auto parent_id : parent_ids) {
-				try {
-					const auto parent_node = publications->find(parent_id);
-					add_citation(id, parent_id);
-				} catch(std::exception &e) {
-					//node->removeNode(); //TODO nie wiem czemu to sie nie kompiluje, ale powinno dzialac o ile uda sie skompilowac
-					throw e;				
-				} 
-			}
-		}
+						create(id, parents_ids);
+				}
 
         // Dodaje nową krawędź w grafie cytowań. Zgłasza wyjątek PublicationNotFound,
         // jeśli któraś z podanych publikacji nie istnieje.
         void add_citation(typename Publication::id_type const &child_id, typename Publication::id_type const &parent_id) {
-        	auto child_publication = publications->find(child_id);
-        	auto parent_publication = publications->find(parent_id);
-            
-        	if (child_publication != publications->end() && parent_publication != publications->end()) {
-				child_publication->second.lock()->addParent(parent_publication->second.lock());				
-				try {
-					parent_publication->second.lock()->addChild(child_publication->second.lock());
-				} catch(std::exception &e) {
-					child_publication->second.lock()->removeLastParent();
-					throw e;						
-				}				
-        	} else {
-          		throw PublicationNotFound();
-        	}
+	        	auto child_publication = publications->find(child_id);
+	        	auto parent_publication = publications->find(parent_id);
+
+	        	if (child_publication != publications->end() && parent_publication != publications->end()) {
+								child_publication->second.lock()->addParent(parent_publication->second);
+
+								try {
+										parent_publication->second.lock()->addChild(child_publication->second.lock());
+								} catch(std::exception &e) {
+										child_publication->second.lock()->removeLastParent();
+										throw e;
+								}
+	        	} else {
+	          		throw PublicationNotFound();
+	        	}
       	}
 
         // Usuwa publikację o podanym identyfikatorze. Zgłasza wyjątek
@@ -256,15 +256,15 @@ class CitationGraph {
         // TriedToRemoveRoot przy próbie usunięcia pierwotnej publikacji.
         // W wypadku rozspójnienia grafu, zachowujemy tylko spójną składową zawierającą źródło.
         void remove(typename Publication::id_type const &id) {
-      		auto publication = publications->find(id);
+	      		auto publication = publications->find(id);
 
-            if (publication == publication->end())
+            if (publication == publications->end())
                 throw PublicationNotFound();
 
-            if (publication->lock()->getPublication().get_id() == id) //TODO to chyba zawsze jest prawda?
+            if (root->getPublication().get_id() == id)
                 throw TriedToRemoveRoot();
 
-            publication->lock()->removeNode();
+            publication->second.lock()->removeNode(publication->second.lock());
     	}
 };
 
