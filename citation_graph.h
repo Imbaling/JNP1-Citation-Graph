@@ -191,12 +191,13 @@ class CitationGraph {
                 throw PublicationNotFound();
 
       			return publication->second.lock()->getPublication();
-    		} 
-		// Tworzy węzeł reprezentujący nową publikację o identyfikatorze id cytującą
-        // publikacje o podanym identyfikatorze parent_id lub podanych identyfikatorach
-        // parent_ids. Zgłasza wyjątek PublicationAlreadyCreated, jeśli publikacja
-        // o identyfikatorze id już istnieje. Zgłasza wyjątek PublicationNotFound, jeśli
-        // któryś z wyspecyfikowanych poprzedników nie istnieje albo lista poprzedników jest pusta.
+    		}
+        
+        // Creates node representing new publication which cites publication 
+        // identified by parent_id or publications identified by vector parents_id.
+        // Throws exception PublicationAlreadyCreated if publication identified by id 
+        // doesen`t exist. Throws exception PublicationNotFound if one of the arguments 
+        // doesen`t exist or vector is empty.
 				void create(typename Publication::id_type const &id, typename std::vector<typename Publication::id_type> const &parent_ids) {
 						const auto child_node = publications->find(id);
 						if (child_node != publications->end())
@@ -234,8 +235,8 @@ class CitationGraph {
 						create(id, parents_ids);
 				}
 
-        // Dodaje nową krawędź w grafie cytowań. Zgłasza wyjątek PublicationNotFound,
-        // jeśli któraś z podanych publikacji nie istnieje.
+        // Adds new edge in the Citation Graph. Throws exception 
+        // PublicationNotFound if one of the publications doesen`t exist.
         void add_citation(typename Publication::id_type const &child_id, typename Publication::id_type const &parent_id) {
 	        	auto child_publication = publications->find(child_id);
 	        	auto parent_publication = publications->find(parent_id);
@@ -256,10 +257,10 @@ class CitationGraph {
 	        	}
       	}
 
-        // Usuwa publikację o podanym identyfikatorze. Zgłasza wyjątek
-        // PublicationNotFound, jeśli żądana publikacja nie istnieje. Zgłasza wyjątek
-        // TriedToRemoveRoot przy próbie usunięcia pierwotnej publikacji.
-        // W wypadku rozspójnienia grafu, zachowujemy tylko spójną składową zawierającą źródło.
+        // Removes publication identified by id. Throws exception PublicationNotFound if the
+        // Publication doesen`t exist. Throws exception TriedToremoveRoot while attempting
+        // to remove the first publication. In the case of the disconnectedness of the graph
+        // we leave only the connected component.
         void remove(typename Publication::id_type const &id) {
 	      		auto publication = publications->find(id);
 
