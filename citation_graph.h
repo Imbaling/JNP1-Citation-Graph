@@ -61,6 +61,10 @@ class CitationGraph {
                     return *pointer;
                 }
 
+                bool exists(std::shared_ptr<Node> node) noexcept {
+                    return children.find(node) != children.end();
+                }
+
 		        		void addChild(std::shared_ptr<Node> const &node) {
 		          			children.insert(node);
 		        		}
@@ -159,9 +163,9 @@ class CitationGraph {
             return publication->second.lock()->getChildrenIds();
     		}
 
-        // Zwraca listę identyfikatorów publikacji cytowanych przez publikację o podanym
-        // identyfikatorze. Zgłasza wyjątek PublicationNotFound, jeśli dana publikacja
-        // nie istnieje.
+        // Returns list of publications's ids cited by the given publication.
+        // Throws PublicationNotFound exception if the given publication does
+        // not exist.
         std::vector<typename Publication::id_type> get_parents(typename Publication::id_type const &id) const {
             const auto publication = publications->find(id);
 
@@ -172,14 +176,14 @@ class CitationGraph {
             return publication->second.lock()->getParentsIds();
     		}
 
-        // Sprawdza, czy publikacja o podanym identyfikatorze istnieje.
+        // Check if the given publication exists.
         bool exists(typename Publication::id_type const &id) const {
     			  return publications->find(id) != publications->end();
     	  }
 
-        // Zwraca referencję do obiektu reprezentującego publikację o podanym
-        // identyfikatorze. Zgłasza wyjątek PublicationNotFound, jeśli żądana publikacja
-        // nie istnieje.
+        // Returns refference to a representation of publication of the given id.
+        // Throws PublicationNotFound exception if the given publication does
+        // not exist.
         Publication& operator[](typename Publication::id_type const &id) const {
       		const auto publication = publications->find(id);
 
@@ -187,9 +191,8 @@ class CitationGraph {
                 throw PublicationNotFound();
 
       			return publication->second.lock()->getPublication();
-    		}
-
-				// Tworzy węzeł reprezentujący nową publikację o identyfikatorze id cytującą
+    		} 
+		// Tworzy węzeł reprezentujący nową publikację o identyfikatorze id cytującą
         // publikacje o podanym identyfikatorze parent_id lub podanych identyfikatorach
         // parent_ids. Zgłasza wyjątek PublicationAlreadyCreated, jeśli publikacja
         // o identyfikatorze id już istnieje. Zgłasza wyjątek PublicationNotFound, jeśli
@@ -238,14 +241,16 @@ class CitationGraph {
 	        	auto parent_publication = publications->find(parent_id);
 
 	        	if (child_publication != publications->end() && parent_publication != publications->end()) {
-								child_publication->second.lock()->addParent(parent_publication->second);
-
-								try {
-										parent_publication->second.lock()->addChild(child_publication->second.lock());
-								} catch(std::exception &e) {
-										child_publication->second.lock()->removeLastParent();
-										throw e;
-								}
+					if (parent_publication->second.lock()->exists(child_publication->second.lock()) == false) {
+					   child_publication->second.lock()->addParent(parent_publication->second);
+                    
+                       try {
+						  parent_publication->second.lock()->addChild(child_publication->second.lock());
+					   } catch(std::exception &e) {
+						  child_publication->second.lock()->removeLastParent();
+						  throw e;
+					   }
+                    }
 	        	} else {
 	          		throw PublicationNotFound();
 	        	}
