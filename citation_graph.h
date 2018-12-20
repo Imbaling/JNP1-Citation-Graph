@@ -96,7 +96,7 @@ class CitationGraph {
                     std::shared_ptr me{this};
 
                     for (const auto &parent : parents) {
-                        parent.lock()->erase(me);
+                        //	parent.lock()->erase(me);
                     }
                 }
 
@@ -202,7 +202,7 @@ class CitationGraph {
 			try{
 				add_citation(id, parent_id);
 			} catch(std::exception &e) {
-				//node->removeNode(); TODO to sie nie kompiluje, ale chyba w ogole nie jest potrzebne				
+				//node->removeNode(); //TODO nie wiem czemu sie nie kompiluje, ale chyba w ogole nie jest potrzebne				
 				throw e;
 			}
 		}
@@ -211,6 +211,25 @@ class CitationGraph {
 			if (child_node != publications->end())
 				throw PublicationAlreadyCreated();
 			
+			for (auto parent_id : parent_ids) {
+				const auto parent_node = publications->find(parent_id);
+				if (parent_node == publications->end())
+					throw PublicationNotFound();
+			}
+			
+			const auto node = std::make_shared<Node>(publications.get(), id); 
+			const auto it = publications->insert(typename map_type::value_type(id, node));
+            node->setMapIterator(it.first);						
+
+			for (auto parent_id : parent_ids) {
+				try {
+					const auto parent_node = publications->find(parent_id);
+					add_citation(id, parent_id);
+				} catch(std::exception &e) {
+					//node->removeNode(); //TODO nie wiem czemu to sie nie kompiluje, ale powinno dzialac o ile uda sie skompilowac
+					throw e;				
+				} 
+			}
 		}
 
         // Dodaje nową krawędź w grafie cytowań. Zgłasza wyjątek PublicationNotFound,
